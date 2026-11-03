@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3D Story AI</title><style>
+body{margin:0;padding:22px;background:#10172e;color:white;font:16px system-ui}
+main{max-width:650px;margin:auto;padding:24px;background:#1b2545;border-radius:20px}
+button{padding:14px 20px;border:0;border-radius:12px;background:#ffc04b;font-weight:700;font-size:16px}
+small{color:#cbd4ed}a{color:#ffc04b}
+</style></head><body><main><h1>3D Story AI</h1>
+<p>Create an original narrated vertical cartoon short.</p>
+<button onclick="generate()">Generate a video draft</button><p id="status">Ready</p>
+<a id="video" href="/video" hidden>Open latest video draft</a>
+<p><small>Drafts require review. Automatic YouTube publishing is not enabled.</small></p>
+</main><script>
+async function generate(){
+ const s=document.getElementById('status');s.textContent='Generating… please wait.';
+ document.getElementById('video').hidden=true;
+ try{const r=await fetch('/generate',{method:'POST'});const d=await r.json();
+ s.textContent=d.status+' '+(d.title||'');
+ if(d.title && d.status.startsWith('Draft generated'))document.getElementById('video').hidden=false;
+ }catch(e){s.textContent='Error: '+e;}
+}
+</script></body></html>
