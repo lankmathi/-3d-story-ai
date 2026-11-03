@@ -1,11 +1,11 @@
-import asyncio, os, subprocess, tempfile
+import os, subprocess, tempfile
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-import edge_tts
 
 W, H = 1080, 1920
 OUT = Path("output")
 OUT.mkdir(exist_ok=True)
+
 
 def get_font(size):
     for path in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -13,6 +13,7 @@ def get_font(size):
         if Path(path).exists():
             return ImageFont.truetype(path, size)
     return ImageFont.load_default()
+
 
 def make_frame(description, index, path):
     colors = [(255,120,95),(255,195,70),(65,205,190),(135,130,255),(255,120,190)]
@@ -43,42 +44,48 @@ def make_frame(description, index, path):
     draw.text((70,70), f"STORY {index+1}/5", font=get_font(34), fill="white")
     image.save(path)
 
-async def make_voice(text, path):
-    speaker = os.getenv("VOICE", "en-US-GuyNeural")
-    await edge_tts.Communicate(text, speaker, rate="+3%", pitch="-8Hz").save(str(path))
+
+def make_voice(text, path):
+    voice = os.getenv("VOICE", "en-us+m3")
+    subprocess.run(
+        ["espeak-ng", "-v", voice, "-s", "145", "-p", "35", "-a", "175", "-w", str(path), text],
+        check=True, capture_output=True, text=True,
+    )
+
 
 def render(story):
     OUT.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        audio = tmp / "voice.mp3"
-        asyncio.run(make_voice(story["narration"], audio))
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        audio = tmp / "voice.wav"
+        make_voice(story["narration"], audio)
         frames = []
         for i, description in enumerate(story["scenes"]):
             frame = tmp / f"frame{i}.png"
             make_frame(description, i, frame)
             frames.append(frame)
         probe = subprocess.run(
-            ["ffprobe","-v","error","-show_entries","format=duration",
-             "-of","default=noprint_wrappers=1:nokey=1",str(audio)],
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(audio)],
             check=True, capture_output=True, text=True)
         duration = max(float(probe.stdout.strip()), 10.0)
         each = duration / len(frames)
         args, filters = [], []
         for frame in frames:
-            args += ["-loop","1","-t",str(each),"-i",str(frame)]
-        args += ["-i",str(audio)]
+            args += ["-loop", "1", "-t", str(each), "-i", str(frame)]
+        args += ["-i", str(audio)]
         for i in range(len(frames)):
             filters.append(
                 f"[{i}:v]scale=1188:2112,zoompan=z='min(zoom+0.0007,1.08)':"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"d=1:s=1080x1920:fps=30,setsar=1[v{i}]")
+                f"d=1:s=1080x1920:fps=30,setsar=1[v{i}]"
+            )
         joined = "".join(f"[v{i}]" for i in range(len(frames)))
         filters.append(f"{joined}concat=n={len(frames)}:v=1:a=0,format=yuv420p[v]")
         output = OUT / "latest_short.mp4"
-        cmd = ["ffmpeg","-y",*args,"-filter_complex",";".join(filters),
-               "-map","[v]","-map",f"{len(frames)}:a","-c:v","libx264",
-               "-preset","veryfast","-r","30","-c:a","aac","-shortest",
-               "-movflags","+faststart",str(output)]
-        subprocess.run(cmd, check=True, capture_output=True)
+        cmd = ["ffmpeg", "-y", *args, "-filter_complex", ";".join(filters),
+               "-map", "[v]", "-map", f"{len(frames)}:a", "-c:v", "libx264",
+               "-preset", "veryfast", "-r", "30", "-c:a", "aac", "-shortest",
+               "-movflags", "+faststart", str(output)]
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
         return str(output)
